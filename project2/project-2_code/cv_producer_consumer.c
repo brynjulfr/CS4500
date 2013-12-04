@@ -1,0 +1,97 @@
+/*
+  Project 2
+  John Foster and Joel Judd
+  Producer/Consumer with conditional variables
+*/
+
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#define MAX 1024
+#define COUNT_LIMIT 5
+
+int count=0,pos=0,num=0; //count, position, number of characters
+char *str; //read string
+char buffer[COUNT_LIMIT]; //buffer
+FILE *fp;
+
+pthread_mutex_t count_mutex;
+pthread_cond_t condc, condp;
+
+//read file for string
+int readf(FILE *fp)
+{
+	if((fp=fopen("message.txt", "r"))==NULL){
+		printf("ERROR: can't open string.txt!\n");
+		return 0;
+	}
+	str=(char *)malloc(sizeof(char)*MAX);
+	if(str==NULL){
+		printf("ERROR: Out of memory!\n");
+		return -1;
+	}
+	//read str from the file
+	str=fgets(str, MAX, fp);
+	num=strlen(str);  //length of str
+}
+
+//producer thread
+void *producer(void *t)
+{
+	int i;
+	for (i = 0; i <= num; i++) {
+		pthread_mutex_lock(&count_mutex); //protect buffer
+		while (count == COUNT_LIMIT) //wait if buffer is full
+			pthread_cond_wait(&condp, &count_mutex);
+		buffer[count] = str[pos]; //copy to buffer
+		count++; //increment count
+		pos++; //increment position
+		pthread_cond_signal(&condc);	//wakeup consumer
+		pthread_mutex_unlock(&count_mutex);	//release buffer
+	}
+	pthread_exit(NULL);
+}
+
+//consumer thread
+void *consumer(void *t)
+{
+	pthread_mutex_lock(&count_mutex); //protect buffer
+	while (pos<num) {
+		pthread_cond_wait(&condc, &count_mutex); //wait if buffer empty
+		printf("%s", buffer); //print buffer
+		count = 0; //reset count
+		pthread_cond_signal(&condp); //wakeup producer
+	}
+	pthread_mutex_unlock(&count_mutex); //release buffer
+	pthread_exit(NULL);
+}
+
+int main (int argc, char *argv[])
+{
+	readf(fp);
+	pthread_t pro, con;
+	long t1=1, t2=2;
+
+	// Initialize the mutex and condition variables
+	pthread_mutex_init(&count_mutex, NULL);	
+	pthread_cond_init(&condc, NULL);
+	pthread_cond_init(&condp, NULL);
+
+	// Create the threads
+	pthread_create(&con, NULL, consumer, (void *)t1);
+	pthread_create(&pro, NULL, producer, (void *)t2);
+
+	// Wait for the threads to finish
+	pthread_join(con, NULL);
+	pthread_join(pro, NULL);
+
+	// Cleanup
+	pthread_mutex_destroy(&count_mutex);
+	pthread_cond_destroy(&condc);
+	pthread_cond_destroy(&condp);
+	pthread_exit(NULL);
+
+}
+

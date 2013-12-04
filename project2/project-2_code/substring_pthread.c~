@@ -1,0 +1,127 @@
+/*
+  Project 2
+  John Foster and Joel Judd
+  Modified substring with pthreads
+  A little bloated, but it works well
+*/
+
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#define MAX 1024
+#define NUM_THREADS 4
+
+struct thread_data{ //holds our split string and search string
+   char *str1;
+   char *str2;
+};
+
+int total = 0;
+int n1,n2;
+char *s1,*s2;
+FILE *fp;
+pthread_mutex_t mutexsum;
+volatile int running_threads = 0; //running thread counter
+
+int readf(FILE *fp)
+{
+	if((fp=fopen("strings.txt", "r"))==NULL){
+		printf("ERROR: can't open string.txt!\n");
+		return 0;
+	}
+	s1=(char *)malloc(sizeof(char)*MAX);
+	if(s1==NULL){
+		printf("ERROR: Out of memory!\n");
+		return -1;
+	}
+	s2=(char *)malloc(sizeof(char)*MAX);
+	if(s1==NULL){
+		printf("ERROR: Out of memory\n");
+		return -1;
+	}
+	/*read s1 s2 from the file*/
+	s1=fgets(s1, MAX, fp);
+	s2=fgets(s2, MAX, fp);
+	n1=strlen(s1);  /*length of s1*/
+	n2=strlen(s2)-1; /*length of s2*/
+	if(s1==NULL || s2==NULL || n1<n2)  /*when error exit*/
+		return -1;
+}
+
+void *thread_substring(void *arg)
+{
+	int i,j,k,count,c1,c2; //get data strings and lengths
+	struct thread_data *thread_data;
+	thread_data = (struct thread_data *)arg;
+	c1 = (strlen(thread_data->str1));
+	c2 = (strlen(thread_data->str2))-1;
+	char *st1, *st2;
+	st1 = thread_data->str1;
+	st2 = thread_data->str2;
+
+	for (i = 0; i <= (c1-c2); i++){   
+		count=0;
+		for(j = i,k = 0; k < c2; j++,k++){  /*search for the next string of size of c2*/  
+			if (*(st1+j)!=*(st2+k)){
+				break;
+			}
+			else
+				count++; //found single
+			if(count==c2){
+				pthread_mutex_lock (&mutexsum);
+				total++;		//found a substring     
+				pthread_mutex_unlock (&mutexsum);                      
+			}
+		}
+	}
+
+	pthread_mutex_lock (&mutexsum); //decrement running thread counter
+	running_threads--;
+	pthread_mutex_unlock (&mutexsum);
+
+	pthread_exit(NULL); //exit thread
+}
+
+int main(int argc, char *argv[])
+{
+	//create threads and counters
+	pthread_t threads[NUM_THREADS];
+	readf(fp);
+	int rc,i;
+	int charcurrent = 0;
+	int charoffset = n1/NUM_THREADS +1;
+	struct thread_data thread_data_array[NUM_THREADS];
+
+	pthread_mutex_init(&mutexsum, NULL); //initialize mutex
+
+	for(i=0; i<NUM_THREADS+1; i++){
+		char *str;
+		str=strndup(s1+charcurrent, charoffset); //split main string
+		thread_data_array[i].str1 = str; //substring
+		thread_data_array[i].str2 = s2; //search string
+
+		pthread_mutex_lock (&mutexsum); //increment running thread counter
+		running_threads++;
+		pthread_mutex_unlock (&mutexsum);
+
+		//create thread, check if error occurred
+		rc = pthread_create(&threads[i], NULL, thread_substring, (void *) &thread_data_array[i]);
+		if (rc){
+			printf("ERROR; return code from pthread_create() is %d\n", rc);
+			exit(-1);
+		}
+		charcurrent += (charoffset-1); //increment current location
+	}
+
+	//wait for threads to complete before showing total
+	while (running_threads > 0) {
+	 	sleep(1);
+	}
+	printf("The number of substrings is: %d\n", total);
+
+	// Last thing that main() should do
+	pthread_mutex_destroy(&mutexsum);
+	pthread_exit(NULL);
+}
